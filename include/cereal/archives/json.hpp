@@ -530,6 +530,14 @@ namespace cereal
             throw Exception("JSON Parsing failed - provided NVP (" + std::string(searchName) + ") not found");
           }
 
+		  size_type size() {
+			  size_type i = 0;
+			  while ((itsMemberItBegin + i) != itsMemberItEnd) {
+				  i++;
+			  }
+			  return i;
+		  }
+
         private:
           MemberIterator itsMemberItBegin, itsMemberItEnd; //!< The member iterator (object)
           ValueIterator itsValueItBegin, itsValueItEnd;    //!< The value iterator (array)
@@ -712,6 +720,10 @@ namespace cereal
         else
           size = (itsIteratorStack.rbegin() + 1)->value().Size();
       }
+
+	  size_type size() {
+		  return itsIteratorStack[0].size();
+	  }
 
       //! @}
 
