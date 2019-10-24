@@ -198,6 +198,72 @@ namespace cereal
       @internal */
   #define CEREAL_NVP_(name, value) ::cereal::make_nvp<Archive>(name, value)
 
+ template <class T>
+  class OptionalNameValuePair : detail::NameValuePairCore
+  {
+    private:
+      // If we get passed an array, keep the type as is, otherwise store
+      // a reference if we were passed an l value reference, else copy the value
+      using Type = typename std::conditional<std::is_array<typename std::remove_reference<T>::type>::value,
+                                             typename std::remove_cv<T>::type,
+                                             typename std::conditional<std::is_lvalue_reference<T>::value,
+                                                                       T,
+                                                                       typename std::decay<T>::type>::type>::type;
+
+      // prevent nested nvps
+      static_assert( !std::is_base_of<detail::NameValuePairCore, T>::value,
+                     "Cannot pair a name to a NameValuePair" );
+
+      OptionalNameValuePair & operator=( OptionalNameValuePair const & ) = delete;
+
+    public:
+      //! Constructs a new NameValuePair
+      /*! @param n The name of the pair
+          @param v The value to pair.  Ideally this should be an l-value reference so that
+                   the value can be both loaded and saved to.  If you pass an r-value reference,
+                   the NameValuePair will store a copy of it instead of a reference.  Thus you should
+                   only pass r-values in cases where this makes sense, such as the result of some
+                   size() call.
+          @internal */
+      OptionalNameValuePair( char const * n, T && v ) : name(n), value(std::forward<T>(v)) {}
+
+      char const * name;
+      Type value;
+  };
+
+  //! A specialization of make_nvp<> that simply forwards the value for binary archives
+  /*! @relates NameValuePair
+      @internal */
+  template<class Archive, class T> inline
+  typename
+  std::enable_if<std::is_same<Archive, ::cereal::BinaryInputArchive>::value ||
+                 std::is_same<Archive, ::cereal::BinaryOutputArchive>::value,
+  T && >::type
+  make_onvp( const char *, T && value )
+  {
+    return std::forward<T>(value);
+  }
+
+  //! A specialization of make_nvp<> that actually creates an nvp for non-binary archives
+  /*! @relates NameValuePair
+      @internal */
+  template<class Archive, class T> inline
+  typename
+  std::enable_if<!std::is_same<Archive, ::cereal::BinaryInputArchive>::value &&
+                 !std::is_same<Archive, ::cereal::BinaryOutputArchive>::value,
+  OptionalNameValuePair<T> >::type
+  makeo_nvp( const char * name, T && value)
+  {
+    return {name, std::forward<T>(value)};
+  }
+
+  //! Convenience for creating a templated NVP
+  /*! For use in internal generic typing functions which have an
+      Archive type declared
+      @internal */
+  #define CEREAL_ONVP_(name, value) ::cereal::make_onvp<Archive>(name, value)
+
+
   // ######################################################################
   //! A wrapper around data that can be serialized in a binary fashion
   /*! This class is used to demarcate data that can safely be serialized

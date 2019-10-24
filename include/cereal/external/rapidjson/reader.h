@@ -482,38 +482,7 @@ public:
         \return Whether the parsing is successful.
     */
     template <unsigned parseFlags, typename InputStream, typename Handler>
-    ParseResult Parse(InputStream& is, Handler& handler) {
-        if (parseFlags & kParseIterativeFlag)
-            return IterativeParse<parseFlags>(is, handler);
-
-        parseResult_.Clear();
-
-        ClearStackOnExit scope(*this);
-
-        SkipWhitespaceAndComments<parseFlags>(is);
-        CEREAL_RAPIDJSON_PARSE_ERROR_EARLY_RETURN(parseResult_);
-
-        if (CEREAL_RAPIDJSON_UNLIKELY(is.Peek() == '\0')) {
-            CEREAL_RAPIDJSON_PARSE_ERROR_NORETURN(kParseErrorDocumentEmpty, is.Tell());
-            CEREAL_RAPIDJSON_PARSE_ERROR_EARLY_RETURN(parseResult_);
-        }
-        else {
-            ParseValue<parseFlags>(is, handler);
-            CEREAL_RAPIDJSON_PARSE_ERROR_EARLY_RETURN(parseResult_);
-
-            if (!(parseFlags & kParseStopWhenDoneFlag)) {
-                SkipWhitespaceAndComments<parseFlags>(is);
-                CEREAL_RAPIDJSON_PARSE_ERROR_EARLY_RETURN(parseResult_);
-
-                if (CEREAL_RAPIDJSON_UNLIKELY(is.Peek() != '\0')) {
-                    CEREAL_RAPIDJSON_PARSE_ERROR_NORETURN(kParseErrorDocumentRootNotSingular, is.Tell());
-                    CEREAL_RAPIDJSON_PARSE_ERROR_EARLY_RETURN(parseResult_);
-                }
-            }
-        }
-
-        return parseResult_;
-    }
+	ParseResult Parse(InputStream& is, Handler& handler);
 
     //! Parse JSON text (with \ref kParseDefaultFlags)
     /*! \tparam InputStream Type of input stream, implementing Stream concept
@@ -1130,262 +1099,7 @@ private:
     };
 
     template<unsigned parseFlags, typename InputStream, typename Handler>
-    void ParseNumber(InputStream& is, Handler& handler) {
-        internal::StreamLocalCopy<InputStream> copy(is);
-        NumberStream<InputStream,
-            ((parseFlags & kParseNumbersAsStringsFlag) != 0) ?
-                ((parseFlags & kParseInsituFlag) == 0) :
-                ((parseFlags & kParseFullPrecisionFlag) != 0),
-            (parseFlags & kParseNumbersAsStringsFlag) != 0 &&
-                (parseFlags & kParseInsituFlag) == 0> s(*this, copy.s);
-
-        size_t startOffset = s.Tell();
-        double d = 0.0;
-        bool useNanOrInf = false;
-
-        // Parse minus
-        bool minus = Consume(s, '-');
-
-        // Parse int: zero / ( digit1-9 *DIGIT )
-        unsigned i = 0;
-        uint64_t i64 = 0;
-        bool use64bit = false;
-        int significandDigit = 0;
-        if (CEREAL_RAPIDJSON_UNLIKELY(s.Peek() == '0')) {
-            i = 0;
-            s.TakePush();
-        }
-        else if (CEREAL_RAPIDJSON_LIKELY(s.Peek() >= '1' && s.Peek() <= '9')) {
-            i = static_cast<unsigned>(s.TakePush() - '0');
-
-            if (minus)
-                while (CEREAL_RAPIDJSON_LIKELY(s.Peek() >= '0' && s.Peek() <= '9')) {
-                    if (CEREAL_RAPIDJSON_UNLIKELY(i >= 214748364)) { // 2^31 = 2147483648
-                        if (CEREAL_RAPIDJSON_LIKELY(i != 214748364 || s.Peek() > '8')) {
-                            i64 = i;
-                            use64bit = true;
-                            break;
-                        }
-                    }
-                    i = i * 10 + static_cast<unsigned>(s.TakePush() - '0');
-                    significandDigit++;
-                }
-            else
-                while (CEREAL_RAPIDJSON_LIKELY(s.Peek() >= '0' && s.Peek() <= '9')) {
-                    if (CEREAL_RAPIDJSON_UNLIKELY(i >= 429496729)) { // 2^32 - 1 = 4294967295
-                        if (CEREAL_RAPIDJSON_LIKELY(i != 429496729 || s.Peek() > '5')) {
-                            i64 = i;
-                            use64bit = true;
-                            break;
-                        }
-                    }
-                    i = i * 10 + static_cast<unsigned>(s.TakePush() - '0');
-                    significandDigit++;
-                }
-        }
-        // Parse NaN or Infinity here
-        else if ((parseFlags & kParseNanAndInfFlag) && CEREAL_RAPIDJSON_LIKELY((s.Peek() == 'I' || s.Peek() == 'N'))) {
-            useNanOrInf = true;
-            if (CEREAL_RAPIDJSON_LIKELY(Consume(s, 'N') && Consume(s, 'a') && Consume(s, 'N'))) {
-                d = std::numeric_limits<double>::quiet_NaN();
-            }
-            else if (CEREAL_RAPIDJSON_LIKELY(Consume(s, 'I') && Consume(s, 'n') && Consume(s, 'f'))) {
-                d = (minus ? -std::numeric_limits<double>::infinity() : std::numeric_limits<double>::infinity());
-                if (CEREAL_RAPIDJSON_UNLIKELY(s.Peek() == 'i' && !(Consume(s, 'i') && Consume(s, 'n')
-                                                            && Consume(s, 'i') && Consume(s, 't') && Consume(s, 'y'))))
-                    CEREAL_RAPIDJSON_PARSE_ERROR(kParseErrorValueInvalid, s.Tell());
-            }
-            else
-                CEREAL_RAPIDJSON_PARSE_ERROR(kParseErrorValueInvalid, s.Tell());
-        }
-        else
-            CEREAL_RAPIDJSON_PARSE_ERROR(kParseErrorValueInvalid, s.Tell());
-
-        // Parse 64bit int
-        bool useDouble = false;
-        if (use64bit) {
-            if (minus)
-                while (CEREAL_RAPIDJSON_LIKELY(s.Peek() >= '0' && s.Peek() <= '9')) {
-                     if (CEREAL_RAPIDJSON_UNLIKELY(i64 >= CEREAL_RAPIDJSON_UINT64_C2(0x0CCCCCCC, 0xCCCCCCCC))) // 2^63 = 9223372036854775808
-                        if (CEREAL_RAPIDJSON_LIKELY(i64 != CEREAL_RAPIDJSON_UINT64_C2(0x0CCCCCCC, 0xCCCCCCCC) || s.Peek() > '8')) {
-                            d = static_cast<double>(i64);
-                            useDouble = true;
-                            break;
-                        }
-                    i64 = i64 * 10 + static_cast<unsigned>(s.TakePush() - '0');
-                    significandDigit++;
-                }
-            else
-                while (CEREAL_RAPIDJSON_LIKELY(s.Peek() >= '0' && s.Peek() <= '9')) {
-                    if (CEREAL_RAPIDJSON_UNLIKELY(i64 >= CEREAL_RAPIDJSON_UINT64_C2(0x19999999, 0x99999999))) // 2^64 - 1 = 18446744073709551615
-                        if (CEREAL_RAPIDJSON_LIKELY(i64 != CEREAL_RAPIDJSON_UINT64_C2(0x19999999, 0x99999999) || s.Peek() > '5')) {
-                            d = static_cast<double>(i64);
-                            useDouble = true;
-                            break;
-                        }
-                    i64 = i64 * 10 + static_cast<unsigned>(s.TakePush() - '0');
-                    significandDigit++;
-                }
-        }
-
-        // Force double for big integer
-        if (useDouble) {
-            while (CEREAL_RAPIDJSON_LIKELY(s.Peek() >= '0' && s.Peek() <= '9')) {
-                if (CEREAL_RAPIDJSON_UNLIKELY(d >= 1.7976931348623157e307)) // DBL_MAX / 10.0
-                    CEREAL_RAPIDJSON_PARSE_ERROR(kParseErrorNumberTooBig, startOffset);
-                d = d * 10 + (s.TakePush() - '0');
-            }
-        }
-
-        // Parse frac = decimal-point 1*DIGIT
-        int expFrac = 0;
-        size_t decimalPosition;
-        if (Consume(s, '.')) {
-            decimalPosition = s.Length();
-
-            if (CEREAL_RAPIDJSON_UNLIKELY(!(s.Peek() >= '0' && s.Peek() <= '9')))
-                CEREAL_RAPIDJSON_PARSE_ERROR(kParseErrorNumberMissFraction, s.Tell());
-
-            if (!useDouble) {
-#if CEREAL_RAPIDJSON_64BIT
-                // Use i64 to store significand in 64-bit architecture
-                if (!use64bit)
-                    i64 = i;
-
-                while (CEREAL_RAPIDJSON_LIKELY(s.Peek() >= '0' && s.Peek() <= '9')) {
-                    if (i64 > CEREAL_RAPIDJSON_UINT64_C2(0x1FFFFF, 0xFFFFFFFF)) // 2^53 - 1 for fast path
-                        break;
-                    else {
-                        i64 = i64 * 10 + static_cast<unsigned>(s.TakePush() - '0');
-                        --expFrac;
-                        if (i64 != 0)
-                            significandDigit++;
-                    }
-                }
-
-                d = static_cast<double>(i64);
-#else
-                // Use double to store significand in 32-bit architecture
-                d = static_cast<double>(use64bit ? i64 : i);
-#endif
-                useDouble = true;
-            }
-
-            while (CEREAL_RAPIDJSON_LIKELY(s.Peek() >= '0' && s.Peek() <= '9')) {
-                if (significandDigit < 17) {
-                    d = d * 10.0 + (s.TakePush() - '0');
-                    --expFrac;
-                    if (CEREAL_RAPIDJSON_LIKELY(d > 0.0))
-                        significandDigit++;
-                }
-                else
-                    s.TakePush();
-            }
-        }
-        else
-            decimalPosition = s.Length(); // decimal position at the end of integer.
-
-        // Parse exp = e [ minus / plus ] 1*DIGIT
-        int exp = 0;
-        if (Consume(s, 'e') || Consume(s, 'E')) {
-            if (!useDouble) {
-                d = static_cast<double>(use64bit ? i64 : i);
-                useDouble = true;
-            }
-
-            bool expMinus = false;
-            if (Consume(s, '+'))
-                ;
-            else if (Consume(s, '-'))
-                expMinus = true;
-
-            if (CEREAL_RAPIDJSON_LIKELY(s.Peek() >= '0' && s.Peek() <= '9')) {
-                exp = static_cast<int>(s.Take() - '0');
-                if (expMinus) {
-                    while (CEREAL_RAPIDJSON_LIKELY(s.Peek() >= '0' && s.Peek() <= '9')) {
-                        exp = exp * 10 + static_cast<int>(s.Take() - '0');
-                        if (exp >= 214748364) {                         // Issue #313: prevent overflow exponent
-                            while (CEREAL_RAPIDJSON_UNLIKELY(s.Peek() >= '0' && s.Peek() <= '9'))  // Consume the rest of exponent
-                                s.Take();
-                        }
-                    }
-                }
-                else {  // positive exp
-                    int maxExp = 308 - expFrac;
-                    while (CEREAL_RAPIDJSON_LIKELY(s.Peek() >= '0' && s.Peek() <= '9')) {
-                        exp = exp * 10 + static_cast<int>(s.Take() - '0');
-                        if (CEREAL_RAPIDJSON_UNLIKELY(exp > maxExp))
-                            CEREAL_RAPIDJSON_PARSE_ERROR(kParseErrorNumberTooBig, startOffset);
-                    }
-                }
-            }
-            else
-                CEREAL_RAPIDJSON_PARSE_ERROR(kParseErrorNumberMissExponent, s.Tell());
-
-            if (expMinus)
-                exp = -exp;
-        }
-
-        // Finish parsing, call event according to the type of number.
-        bool cont = true;
-
-        if (parseFlags & kParseNumbersAsStringsFlag) {
-            if (parseFlags & kParseInsituFlag) {
-                s.Pop();  // Pop stack no matter if it will be used or not.
-                typename InputStream::Ch* head = is.PutBegin();
-                const size_t length = s.Tell() - startOffset;
-                CEREAL_RAPIDJSON_ASSERT(length <= 0xFFFFFFFF);
-                // unable to insert the \0 character here, it will erase the comma after this number
-                const typename TargetEncoding::Ch* const str = reinterpret_cast<typename TargetEncoding::Ch*>(head);
-                cont = handler.RawNumber(str, SizeType(length), false);
-            }
-            else {
-                SizeType numCharsToCopy = static_cast<SizeType>(s.Length());
-                StringStream srcStream(s.Pop());
-                StackStream<typename TargetEncoding::Ch> dstStream(stack_);
-                while (numCharsToCopy--) {
-                    Transcoder<UTF8<>, TargetEncoding>::Transcode(srcStream, dstStream);
-                }
-                dstStream.Put('\0');
-                const typename TargetEncoding::Ch* str = dstStream.Pop();
-                const SizeType length = static_cast<SizeType>(dstStream.Length()) - 1;
-                cont = handler.RawNumber(str, SizeType(length), true);
-            }
-        }
-        else {
-           size_t length = s.Length();
-           const char* decimal = s.Pop();  // Pop stack no matter if it will be used or not.
-
-           if (useDouble) {
-               int p = exp + expFrac;
-               if (parseFlags & kParseFullPrecisionFlag)
-                   d = internal::StrtodFullPrecision(d, p, decimal, length, decimalPosition, exp);
-               else
-                   d = internal::StrtodNormalPrecision(d, p);
-
-               cont = handler.Double(minus ? -d : d);
-           }
-           else if (useNanOrInf) {
-               cont = handler.Double(d);
-           }
-           else {
-               if (use64bit) {
-                   if (minus)
-                       cont = handler.Int64(static_cast<int64_t>(~i64 + 1));
-                   else
-                       cont = handler.Uint64(i64);
-               }
-               else {
-                   if (minus)
-                       cont = handler.Int(static_cast<int32_t>(~i + 1));
-                   else
-                       cont = handler.Uint(i);
-               }
-           }
-        }
-        if (CEREAL_RAPIDJSON_UNLIKELY(!cont))
-            CEREAL_RAPIDJSON_PARSE_ERROR(kParseErrorTermination, startOffset);
-    }
+	void ParseNumber(InputStream& is, Handler& handler);
 
     // Parse any JSON value
     template<unsigned parseFlags, typename InputStream, typename Handler>
@@ -1857,6 +1571,302 @@ private:
     internal::Stack<StackAllocator> stack_;  //!< A stack for storing decoded string temporarily during non-destructive parsing.
     ParseResult parseResult_;
 }; // class GenericReader
+	
+	template <typename SourceEncoding, typename TargetEncoding, typename StackAllocator>
+	template <unsigned parseFlags, typename InputStream, typename Handler>
+    ParseResult GenericReader<SourceEncoding, TargetEncoding, StackAllocator>::Parse(InputStream& is, Handler& handler) {
+        if (parseFlags & kParseIterativeFlag)
+            return IterativeParse<parseFlags>(is, handler);
+
+        parseResult_.Clear();
+
+        ClearStackOnExit scope(*this);
+
+        SkipWhitespaceAndComments<parseFlags>(is);
+        CEREAL_RAPIDJSON_PARSE_ERROR_EARLY_RETURN(parseResult_);
+
+        if (CEREAL_RAPIDJSON_UNLIKELY(is.Peek() == '\0')) {
+            CEREAL_RAPIDJSON_PARSE_ERROR_NORETURN(kParseErrorDocumentEmpty, is.Tell());
+            CEREAL_RAPIDJSON_PARSE_ERROR_EARLY_RETURN(parseResult_);
+        }
+        else {
+            ParseValue<parseFlags>(is, handler);
+            CEREAL_RAPIDJSON_PARSE_ERROR_EARLY_RETURN(parseResult_);
+
+            if (!(parseFlags & kParseStopWhenDoneFlag)) {
+                SkipWhitespaceAndComments<parseFlags>(is);
+                CEREAL_RAPIDJSON_PARSE_ERROR_EARLY_RETURN(parseResult_);
+
+                if (CEREAL_RAPIDJSON_UNLIKELY(is.Peek() != '\0')) {
+                    CEREAL_RAPIDJSON_PARSE_ERROR_NORETURN(kParseErrorDocumentRootNotSingular, is.Tell());
+                    CEREAL_RAPIDJSON_PARSE_ERROR_EARLY_RETURN(parseResult_);
+                }
+            }
+        }
+
+        return parseResult_;
+    }
+
+
+
+	template <typename SourceEncoding, typename TargetEncoding, typename StackAllocator>
+    template<unsigned parseFlags, typename InputStream, typename Handler>
+	void GenericReader<SourceEncoding, TargetEncoding, StackAllocator>::ParseNumber(InputStream& is, Handler& handler){
+        internal::StreamLocalCopy<InputStream> copy(is);
+        NumberStream<InputStream,
+            ((parseFlags & kParseNumbersAsStringsFlag) != 0) ?
+                ((parseFlags & kParseInsituFlag) == 0) :
+                ((parseFlags & kParseFullPrecisionFlag) != 0),
+            (parseFlags & kParseNumbersAsStringsFlag) != 0 &&
+                (parseFlags & kParseInsituFlag) == 0> s(*this, copy.s);
+
+        size_t startOffset = s.Tell();
+        double d = 0.0;
+        bool useNanOrInf = false;
+
+        // Parse minus
+        bool minus = Consume(s, '-');
+
+        // Parse int: zero / ( digit1-9 *DIGIT )
+        unsigned i = 0;
+        uint64_t i64 = 0;
+        bool use64bit = false;
+        int significandDigit = 0;
+        if (CEREAL_RAPIDJSON_UNLIKELY(s.Peek() == '0')) {
+            i = 0;
+            s.TakePush();
+        }
+        else if (CEREAL_RAPIDJSON_LIKELY(s.Peek() >= '1' && s.Peek() <= '9')) {
+            i = static_cast<unsigned>(s.TakePush() - '0');
+
+            if (minus)
+                while (CEREAL_RAPIDJSON_LIKELY(s.Peek() >= '0' && s.Peek() <= '9')) {
+                    if (CEREAL_RAPIDJSON_UNLIKELY(i >= 214748364)) { // 2^31 = 2147483648
+                        if (CEREAL_RAPIDJSON_LIKELY(i != 214748364 || s.Peek() > '8')) {
+                            i64 = i;
+                            use64bit = true;
+                            break;
+                        }
+                    }
+                    i = i * 10 + static_cast<unsigned>(s.TakePush() - '0');
+                    significandDigit++;
+                }
+            else
+                while (CEREAL_RAPIDJSON_LIKELY(s.Peek() >= '0' && s.Peek() <= '9')) {
+                    if (CEREAL_RAPIDJSON_UNLIKELY(i >= 429496729)) { // 2^32 - 1 = 4294967295
+                        if (CEREAL_RAPIDJSON_LIKELY(i != 429496729 || s.Peek() > '5')) {
+                            i64 = i;
+                            use64bit = true;
+                            break;
+                        }
+                    }
+                    i = i * 10 + static_cast<unsigned>(s.TakePush() - '0');
+                    significandDigit++;
+                }
+        }
+        // Parse NaN or Infinity here
+        else if ((parseFlags & kParseNanAndInfFlag) && CEREAL_RAPIDJSON_LIKELY((s.Peek() == 'I' || s.Peek() == 'N'))) {
+            useNanOrInf = true;
+            if (CEREAL_RAPIDJSON_LIKELY(Consume(s, 'N') && Consume(s, 'a') && Consume(s, 'N'))) {
+                d = std::numeric_limits<double>::quiet_NaN();
+            }
+            else if (CEREAL_RAPIDJSON_LIKELY(Consume(s, 'I') && Consume(s, 'n') && Consume(s, 'f'))) {
+                d = (minus ? -std::numeric_limits<double>::infinity() : std::numeric_limits<double>::infinity());
+                if (CEREAL_RAPIDJSON_UNLIKELY(s.Peek() == 'i' && !(Consume(s, 'i') && Consume(s, 'n')
+                                                            && Consume(s, 'i') && Consume(s, 't') && Consume(s, 'y'))))
+                    CEREAL_RAPIDJSON_PARSE_ERROR(kParseErrorValueInvalid, s.Tell());
+            }
+            else
+                CEREAL_RAPIDJSON_PARSE_ERROR(kParseErrorValueInvalid, s.Tell());
+        }
+        else
+            CEREAL_RAPIDJSON_PARSE_ERROR(kParseErrorValueInvalid, s.Tell());
+
+        // Parse 64bit int
+        bool useDouble = false;
+        if (use64bit) {
+            if (minus)
+                while (CEREAL_RAPIDJSON_LIKELY(s.Peek() >= '0' && s.Peek() <= '9')) {
+                     if (CEREAL_RAPIDJSON_UNLIKELY(i64 >= CEREAL_RAPIDJSON_UINT64_C2(0x0CCCCCCC, 0xCCCCCCCC))) // 2^63 = 9223372036854775808
+                        if (CEREAL_RAPIDJSON_LIKELY(i64 != CEREAL_RAPIDJSON_UINT64_C2(0x0CCCCCCC, 0xCCCCCCCC) || s.Peek() > '8')) {
+                            d = static_cast<double>(i64);
+                            useDouble = true;
+                            break;
+                        }
+                    i64 = i64 * 10 + static_cast<unsigned>(s.TakePush() - '0');
+                    significandDigit++;
+                }
+            else
+                while (CEREAL_RAPIDJSON_LIKELY(s.Peek() >= '0' && s.Peek() <= '9')) {
+                    if (CEREAL_RAPIDJSON_UNLIKELY(i64 >= CEREAL_RAPIDJSON_UINT64_C2(0x19999999, 0x99999999))) // 2^64 - 1 = 18446744073709551615
+                        if (CEREAL_RAPIDJSON_LIKELY(i64 != CEREAL_RAPIDJSON_UINT64_C2(0x19999999, 0x99999999) || s.Peek() > '5')) {
+                            d = static_cast<double>(i64);
+                            useDouble = true;
+                            break;
+                        }
+                    i64 = i64 * 10 + static_cast<unsigned>(s.TakePush() - '0');
+                    significandDigit++;
+                }
+        }
+
+        // Force double for big integer
+        if (useDouble) {
+            while (CEREAL_RAPIDJSON_LIKELY(s.Peek() >= '0' && s.Peek() <= '9')) {
+                if (CEREAL_RAPIDJSON_UNLIKELY(d >= 1.7976931348623157e307)) // DBL_MAX / 10.0
+                    CEREAL_RAPIDJSON_PARSE_ERROR(kParseErrorNumberTooBig, startOffset);
+                d = d * 10 + (s.TakePush() - '0');
+            }
+        }
+
+        // Parse frac = decimal-point 1*DIGIT
+        int expFrac = 0;
+        size_t decimalPosition;
+        if (Consume(s, '.')) {
+            decimalPosition = s.Length();
+
+            if (CEREAL_RAPIDJSON_UNLIKELY(!(s.Peek() >= '0' && s.Peek() <= '9')))
+                CEREAL_RAPIDJSON_PARSE_ERROR(kParseErrorNumberMissFraction, s.Tell());
+
+            if (!useDouble) {
+#if CEREAL_RAPIDJSON_64BIT
+                // Use i64 to store significand in 64-bit architecture
+                if (!use64bit)
+                    i64 = i;
+
+                while (CEREAL_RAPIDJSON_LIKELY(s.Peek() >= '0' && s.Peek() <= '9')) {
+                    if (i64 > CEREAL_RAPIDJSON_UINT64_C2(0x1FFFFF, 0xFFFFFFFF)) // 2^53 - 1 for fast path
+                        break;
+                    else {
+                        i64 = i64 * 10 + static_cast<unsigned>(s.TakePush() - '0');
+                        --expFrac;
+                        if (i64 != 0)
+                            significandDigit++;
+                    }
+                }
+
+                d = static_cast<double>(i64);
+#else
+                // Use double to store significand in 32-bit architecture
+                d = static_cast<double>(use64bit ? i64 : i);
+#endif
+                useDouble = true;
+            }
+
+            while (CEREAL_RAPIDJSON_LIKELY(s.Peek() >= '0' && s.Peek() <= '9')) {
+                if (significandDigit < 17) {
+                    d = d * 10.0 + (s.TakePush() - '0');
+                    --expFrac;
+                    if (CEREAL_RAPIDJSON_LIKELY(d > 0.0))
+                        significandDigit++;
+                }
+                else
+                    s.TakePush();
+            }
+        }
+        else
+            decimalPosition = s.Length(); // decimal position at the end of integer.
+
+        // Parse exp = e [ minus / plus ] 1*DIGIT
+        int exp = 0;
+        if (Consume(s, 'e') || Consume(s, 'E')) {
+            if (!useDouble) {
+                d = static_cast<double>(use64bit ? i64 : i);
+                useDouble = true;
+            }
+
+            bool expMinus = false;
+            if (Consume(s, '+'))
+                ;
+            else if (Consume(s, '-'))
+                expMinus = true;
+
+            if (CEREAL_RAPIDJSON_LIKELY(s.Peek() >= '0' && s.Peek() <= '9')) {
+                exp = static_cast<int>(s.Take() - '0');
+                if (expMinus) {
+                    while (CEREAL_RAPIDJSON_LIKELY(s.Peek() >= '0' && s.Peek() <= '9')) {
+                        exp = exp * 10 + static_cast<int>(s.Take() - '0');
+                        if (exp >= 214748364) {                         // Issue #313: prevent overflow exponent
+                            while (CEREAL_RAPIDJSON_UNLIKELY(s.Peek() >= '0' && s.Peek() <= '9'))  // Consume the rest of exponent
+                                s.Take();
+                        }
+                    }
+                }
+                else {  // positive exp
+                    int maxExp = 308 - expFrac;
+                    while (CEREAL_RAPIDJSON_LIKELY(s.Peek() >= '0' && s.Peek() <= '9')) {
+                        exp = exp * 10 + static_cast<int>(s.Take() - '0');
+                        if (CEREAL_RAPIDJSON_UNLIKELY(exp > maxExp))
+                            CEREAL_RAPIDJSON_PARSE_ERROR(kParseErrorNumberTooBig, startOffset);
+                    }
+                }
+            }
+            else
+                CEREAL_RAPIDJSON_PARSE_ERROR(kParseErrorNumberMissExponent, s.Tell());
+
+            if (expMinus)
+                exp = -exp;
+        }
+
+        // Finish parsing, call event according to the type of number.
+        bool cont = true;
+
+        if (parseFlags & kParseNumbersAsStringsFlag) {
+            if (parseFlags & kParseInsituFlag) {
+                s.Pop();  // Pop stack no matter if it will be used or not.
+                typename InputStream::Ch* head = is.PutBegin();
+                const size_t length = s.Tell() - startOffset;
+                CEREAL_RAPIDJSON_ASSERT(length <= 0xFFFFFFFF);
+                // unable to insert the \0 character here, it will erase the comma after this number
+                const typename TargetEncoding::Ch* const str = reinterpret_cast<typename TargetEncoding::Ch*>(head);
+                cont = handler.RawNumber(str, SizeType(length), false);
+            }
+            else {
+                SizeType numCharsToCopy = static_cast<SizeType>(s.Length());
+                StringStream srcStream(s.Pop());
+                StackStream<typename TargetEncoding::Ch> dstStream(stack_);
+                while (numCharsToCopy--) {
+                    Transcoder<UTF8<>, TargetEncoding>::Transcode(srcStream, dstStream);
+                }
+                dstStream.Put('\0');
+                const typename TargetEncoding::Ch* str = dstStream.Pop();
+                const SizeType length = static_cast<SizeType>(dstStream.Length()) - 1;
+                cont = handler.RawNumber(str, SizeType(length), true);
+            }
+        }
+        else {
+           size_t length = s.Length();
+           const char* decimal = s.Pop();  // Pop stack no matter if it will be used or not.
+
+           if (useDouble) {
+               int p = exp + expFrac;
+               if (parseFlags & kParseFullPrecisionFlag)
+                   d = internal::StrtodFullPrecision(d, p, decimal, length, decimalPosition, exp);
+               else
+                   d = internal::StrtodNormalPrecision(d, p);
+
+               cont = handler.Double(minus ? -d : d);
+           }
+           else if (useNanOrInf) {
+               cont = handler.Double(d);
+           }
+           else {
+               if (use64bit) {
+                   if (minus)
+                       cont = handler.Int64(static_cast<int64_t>(~i64 + 1));
+                   else
+                       cont = handler.Uint64(i64);
+               }
+               else {
+                   if (minus)
+                       cont = handler.Int(static_cast<int32_t>(~i + 1));
+                   else
+                       cont = handler.Uint(i);
+               }
+           }
+        }
+        if (CEREAL_RAPIDJSON_UNLIKELY(!cont))
+            CEREAL_RAPIDJSON_PARSE_ERROR(kParseErrorTermination, startOffset);
+    }
 
 //! Reader with UTF8 encoding and default allocator.
 typedef GenericReader<UTF8<>, UTF8<> > Reader;

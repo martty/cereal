@@ -15,7 +15,7 @@ else()
 endif()
 
 if(MSVC)
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /bigobj /W3 /WX")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /bigobj /W3 /WX /D_CRT_SECURE_NO_WARNINGS")
 else()
     set(CMAKE_CXX_FLAGS "-Wall -g -Wextra -Wshadow -pedantic -Wold-style-cast ${CMAKE_CXX_FLAGS}")
     option(WITH_WERROR "Compile with '-Werror' C++ compiler flag" ON)
@@ -33,8 +33,8 @@ else()
 endif()
 
 if(NOT CMAKE_VERSION VERSION_LESS 3.0)
-    add_library(cereal INTERFACE)
-    target_include_directories(cereal INTERFACE
+    add_library(cereal STATIC json.cc)
+    target_include_directories(cereal PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
         $<INSTALL_INTERFACE:include>
     )

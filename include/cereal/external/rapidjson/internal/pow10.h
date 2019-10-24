@@ -25,8 +25,7 @@ namespace internal {
     \param n non-negative exponent. Must <= 308.
     \return 10.0^n
 */
-inline double Pow10(int n) {
-    static const double e[] = { // 1e-0...1e308: 309 * 8 bytes = 2472 bytes
+static const double e[] = { // 1e-0...1e308: 309 * 8 bytes = 2472 bytes
         1e+0,  
         1e+1,  1e+2,  1e+3,  1e+4,  1e+5,  1e+6,  1e+7,  1e+8,  1e+9,  1e+10, 1e+11, 1e+12, 1e+13, 1e+14, 1e+15, 1e+16, 1e+17, 1e+18, 1e+19, 1e+20, 
         1e+21, 1e+22, 1e+23, 1e+24, 1e+25, 1e+26, 1e+27, 1e+28, 1e+29, 1e+30, 1e+31, 1e+32, 1e+33, 1e+34, 1e+35, 1e+36, 1e+37, 1e+38, 1e+39, 1e+40,
@@ -44,7 +43,9 @@ inline double Pow10(int n) {
         1e+261,1e+262,1e+263,1e+264,1e+265,1e+266,1e+267,1e+268,1e+269,1e+270,1e+271,1e+272,1e+273,1e+274,1e+275,1e+276,1e+277,1e+278,1e+279,1e+280,
         1e+281,1e+282,1e+283,1e+284,1e+285,1e+286,1e+287,1e+288,1e+289,1e+290,1e+291,1e+292,1e+293,1e+294,1e+295,1e+296,1e+297,1e+298,1e+299,1e+300,
         1e+301,1e+302,1e+303,1e+304,1e+305,1e+306,1e+307,1e+308
-    };
+};
+
+inline double Pow10(int n) {
     CEREAL_RAPIDJSON_ASSERT(n >= 0 && n <= 308);
     return e[n];
 }

@@ -40,7 +40,7 @@ foreach(TEST_SOURCE ${TESTS})
 
   if(IS_SPECIAL_TEST EQUAL -1)
 
-    add_executable(${TEST_TARGET} ${TEST_SOURCE})
+    add_executable(${TEST_TARGET} ${TEST_SOURCE} ../json.cc)
     target_link_libraries(${TEST_TARGET} ${CEREAL_THREAD_LIBS})
     add_test("${TEST_TARGET}" "${TEST_TARGET}")
 

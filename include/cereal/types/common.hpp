@@ -106,15 +106,6 @@ namespace cereal
     t = reinterpret_cast<typename common_detail::is_enum<T>::type const &>( value );
   }
 
-  //! Serialization for raw pointers
-  /*! This exists only to throw a static_assert to let users know we don't support raw pointers. */
-  template <class Archive, class T> inline
-  void CEREAL_SERIALIZE_FUNCTION_NAME( Archive &, T * & )
-  {
-    static_assert(cereal::traits::detail::delay_static_assert<T>::value,
-      "Cereal does not support serializing raw pointers - please use a smart pointer");
-  }
-
   //! Serialization for C style arrays
   template <class Archive, class T> inline
   typename std::enable_if<std::is_array<T>::value, void>::type

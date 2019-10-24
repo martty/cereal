@@ -132,12 +132,12 @@ inline char* WriteExponent(int K, char* buffer) {
     if (K >= 100) {
         *buffer++ = static_cast<char>('0' + static_cast<char>(K / 100));
         K %= 100;
-        const char* d = GetDigitsLut() + K * 2;
+        const char* d = cDigitsLut + K * 2;
         *buffer++ = d[0];
         *buffer++ = d[1];
     }
     else if (K >= 10) {
-        const char* d = GetDigitsLut() + K * 2;
+        const char* d = cDigitsLut + K * 2;
         *buffer++ = d[0];
         *buffer++ = d[1];
     }

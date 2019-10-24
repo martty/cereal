@@ -71,6 +71,31 @@ namespace cereal
   #define CEREAL_NVP(T) ::cereal::make_nvp(#T, T)
 
   // ######################################################################
+  //! Creates a name value pair
+  /*! @relates NameValuePair
+      @ingroup Utility */
+  template <class T> inline
+  OptionalNameValuePair<T> make_onvp( std::string const & name, T && value )
+  {
+    return {name.c_str(), std::forward<T>(value)};
+  }
+
+  //! Creates a name value pair
+  /*! @relates NameValuePair
+      @ingroup Utility */
+  template <class T> inline
+  OptionalNameValuePair<T> make_onvp( const char * name, T && value )
+  {
+    return {name, std::forward<T>(value)};
+  }
+
+  //! Creates a name value pair for the variable T with the same name as the variable
+  /*! @relates NameValuePair
+      @ingroup Utility */
+  #define CEREAL_ONVP(T) ::cereal::make_onvp(#T, T)
+
+
+  // ######################################################################
   //! Convenience function to create binary data for both const and non const pointers
   /*! @param data Pointer to beginning of the data
       @param size The size in bytes of the data
@@ -105,7 +130,7 @@ namespace cereal
       for the archive type and the types that require the extra information.
       @ingroup Internal */
   template <class Archive, class T> inline
-  void prologue( Archive & /* archive */, T const & /* data */)
+  bool prologue( Archive & /* archive */, T const & /* data */)
   { }
 
   //! Called after a type is serialized to tear down any special archive state
@@ -726,9 +751,10 @@ namespace cereal
       template <class T> inline
       void process( T && head )
       {
-        prologue( *self, head );
-        self->processImpl( head );
-        epilogue( *self, head );
+		  if (prologue(*self, head)) {
+			  self->processImpl(head);
+			  epilogue(*self, head);
+		  }
       }
 
       //! Unwinds to process all data
